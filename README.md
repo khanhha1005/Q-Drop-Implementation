@@ -5,7 +5,7 @@ This repository contains the code and experimental setups for the project *Q-Dro
 ## Repository Structure
 
 - **`experiment_backprop_PGP/`**  
-  Contains experimental setups and Jupyter notebooks that explore the backpropagation-based quantum gradient pruning (PGP) technique on different datasets. Each subfolder includes tests on the following datasets:
+  Contains experimental setups and Jupyter notebooks that explore the backpropagation and  quantum gradient pruning (PGP) technique on different datasets. Each subfolder includes tests on the following datasets:
   - MNIST (2-class)
   - Fashion MNIST (2-class)
   - Pneumonia MedMNIST
@@ -15,12 +15,7 @@ This repository contains the code and experimental setups for the project *Q-Dro
   Contains the experimental setup that focuses on dynamic dropout applied to quantum orthogonal networks. Each experiment mirrors the dataset structure mentioned above.
 
 - **`experiment_pshift_PGP/`**  
-  Contains the experimental setups that implement phase shift techniques in quantum gradient pruning (PGP). The datasets used for evaluation include:
-  - MNIST (2-class)
-  - Fashion MNIST (2-class)
-  - Pneumonia MedMNIST
-  - Retina MedMNIST (2-class)
-
+  Contains the experimental setups that implement parameter shift rules and quantum gradient pruning (PGP) on the above datasets
 - **`QuantumOrthoNN_Model_Pennylane_ipynb.ipynb`**  
   This notebook contains the core implementation of Quantum Orthogonal Networks using the Pennylane framework. It includes the model definitions, training procedures, and evaluation metrics.
 
