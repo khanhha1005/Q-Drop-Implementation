@@ -19,9 +19,6 @@ This repository contains the code and experimental setups for the project *Q-Dro
 - **`QuantumOrthoNN_Model_Pennylane_ipynb.ipynb`**  
   This notebook contains the core implementation of Quantum Orthogonal Networks using the Pennylane framework. It includes the model definitions, training procedures, and evaluation metrics.
 
-- **`Quantum_Result/`**  
-  Stores the results from the various quantum experiments run across different datasets. This includes performance metrics, visualizations, and comparisons between different pruning and dropout techniques.
-
 - **`README.md`**  
   Initial setup and documentation for navigating the project.
 
