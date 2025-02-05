@@ -1,4 +1,4 @@
-name: Penny
+name: Penny2
 channels:
   - conda-forge
   - nvidia
