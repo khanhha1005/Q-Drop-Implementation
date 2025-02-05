@@ -23,10 +23,14 @@ This repository contains the code and experimental setups for the project *Q-Dro
 ## Getting Started
 
 1. Clone the repository:
-   ```bash
+  ```
    git clone https://github.com/yourusername/Q-Drop.git
-   ```
+  ```
 2. Create conda environment:
   ```
   conda env create -f penny_env.yml
   ```
+## Citation
+```
+
+```
