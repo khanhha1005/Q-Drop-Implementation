@@ -13,11 +13,13 @@ from utils.rbs_gate import *
 import random as rd
 
 # =============================================================================
-# QuantumDynamicDropoutManager
+# QuantumDynamicDropout
 # This class encapsulates gradient sanitization and quantum dropout.
 # =============================================================================
-class QuantumDynamicDropoutManager:
-    def __init__(self, quantum_weights, theta_wire_0, theta_wire_1, n_drop, drop_flag):
+class QuantumDynamicDropout:
+    def __init__(self, 
+                 quantum_weights : tf.Variables, 
+                 theta_wire_0, theta_wire_1, n_drop, drop_flag):
         """
         Args:
             quantum_weights: The trainable quantum weight variable.
@@ -90,3 +92,107 @@ class QuantumDynamicDropoutManager:
         new_gradients = list(gradients)
         new_gradients[quantum_index] = new_quantum_grad
         return new_gradients
+
+# =============================================================================
+# HybridModel Definition with QuantumDynamicDropout
+# =============================================================================
+class HybridModel(tf.keras.Model):
+    def __init__(self, apply_quantum_dropout):
+        super(HybridModel, self).__init__()
+        self.flatten = tf.keras.layers.Flatten()
+        self.dense = tf.keras.layers.Dense(6, activation='linear', dtype=tf.float64)
+        self.quantum_weights2 = self.add_weight(
+            shape=(15,),
+            initializer='zeros',
+            trainable=True,
+            dtype=tf.float32
+        )
+        self.theta_locked = self.add_weight(
+            shape=(15,),
+            initializer='zeros',
+            trainable=False,
+            dtype=tf.float32
+        )
+        
+        # Quantum device and circuit definition.
+        self.dev = qml.device('default.qubit.tf', wires=6)
+
+        @qml.qnode(self.dev, interface='tf', diff_method='backprop')
+        def quantum_circuit(inputs, weights):
+            inputs = tf.cast(inputs, tf.float32)
+            weights = tf.cast(weights, tf.float32)
+            vector_loader(convert_array(inputs), wires=range(6))
+            pyramid_circuit(weights, wires=range(6))
+            return [qml.expval(qml.PauliZ(wire)) for wire in range(6)]
+        self.quantum_circuit = quantum_circuit
+        
+        self.classical_nn_2 = tf.keras.layers.Dense(2, activation='sigmoid', dtype=tf.float64)
+        
+        # Define dropout masks.
+        self.theta_wire_0 = tf.constant([1, 0, 1, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 1], dtype=tf.int32)
+        self.theta_wire_1 = tf.constant([0, 1, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 1, 0], dtype=tf.int32)
+        self.n_drop = tf.constant(1, dtype=tf.int32)  # Change to 2 for two-wire dropout.
+        self.drop_flag = tf.Variable(apply_quantum_dropout, trainable=False)
+        
+        # Instantiate the dropout manager with the quantum parameters.
+        self.dropout_manager = QuantumDynamicDropout(
+            quantum_weights=self.quantum_weights2,
+            theta_wire_0=self.theta_wire_0,
+            theta_wire_1=self.theta_wire_1,
+            n_drop=self.n_drop,
+            drop_flag=self.drop_flag
+        )
+
+    def call(self, inputs):
+        inputs = tf.cast(inputs, tf.float64)
+        flattened_inputs = self.flatten(inputs)
+        classical_output = self.dense(flattened_inputs)
+        quantum_outputs = tf.map_fn(
+            lambda x: tf.stack(self.quantum_circuit(x, self.quantum_weights2)),
+            classical_output,
+            fn_output_signature=tf.TensorSpec(shape=(6,), dtype=tf.float64)
+        )
+        # Optionally zero out the first wire if dropout is active.
+        quantum_outputs = tf.cond(
+            self.drop_flag,
+            lambda: tf.concat([
+                tf.zeros((tf.shape(quantum_outputs)[0], 1), dtype=tf.float64),
+                quantum_outputs[:, 1:]
+            ], axis=1),
+            lambda: quantum_outputs
+        )
+        quantum_outputs = tf.where(tf.math.is_nan(quantum_outputs),
+                                   tf.zeros_like(quantum_outputs),
+                                   quantum_outputs)
+        quantum_outputs = tf.reshape(quantum_outputs, [-1, 6])
+        nn_output = self.classical_nn_2(quantum_outputs)
+        return nn_output
+
+    @tf.function
+    def train_step(self, data):
+        x, y = data  # Unpack the data
+
+        # "Lock" the current quantum weights (this could be useful for debugging or further processing).
+        self.theta_locked.assign(tf.identity(self.quantum_weights2))
+
+        with tf.GradientTape() as tape:
+            y_pred = self(x, training=True)  # Forward pass
+            loss = self.compiled_loss(y, y_pred, regularization_losses=self.losses)
+        
+        # Compute gradients for all trainable variables.
+        gradients = tape.gradient(loss, self.trainable_variables)
+        
+        # Sanitize gradients and apply quantum dynamic dropout.
+        sanitized_gradients = self.dropout_manager.sanitize_gradients(gradients)
+        final_gradients = self.dropout_manager.apply_dropout(sanitized_gradients, self.trainable_variables)
+        
+        # Apply the processed gradients.
+        self.optimizer.apply_gradients(zip(final_gradients, self.trainable_variables))
+        
+        # Sanitize model variables: replace any NaNs with zeros.
+        for var in self.trainable_variables:
+            var.assign(tf.where(tf.math.is_nan(var), tf.zeros_like(var), var))
+        
+        # Update metrics and return the metric results.
+        self.compiled_metrics.update_state(y, y_pred)
+        return {m.name: m.result() for m in self.metrics}

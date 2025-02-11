@@ -17,7 +17,12 @@ import random as rd
 # HybridModel Definition with OOP Train Step
 # =============================================================================
 class HybridModel(tf.keras.Model):
-    def __init__(self, random :int, algorithm :str, algorithm_params :dict):
+    def __init__(self, 
+                 random :int, 
+                 algorithm :str, 
+                 algorithm_params :dict,
+                 wires :int = 6
+                ):
         super(HybridModel, self).__init__()
         
         # Set seeds for reproducibility
@@ -36,7 +41,7 @@ class HybridModel(tf.keras.Model):
         )
         
         # Quantum device with 6 wires
-        self.dev = qml.device('default.qubit.tf', wires=6)
+        self.dev = qml.device('default.qubit.tf', wires=wires)
         
         # Build the quantum node (QNode)
         @qml.qnode(self.dev, interface='tf', diff_method='backprop')

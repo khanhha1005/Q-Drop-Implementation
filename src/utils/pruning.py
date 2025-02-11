@@ -25,7 +25,8 @@ class ScheduledGradientPruning:
                  prune_ratio : float=0.8, 
                  seed : int=42, 
                  dtype : tf.dtypes.DType=tf.float64, 
-                 schedule : bool = False):
+                 schedule : bool = False
+                ):
         # Quantum weights variable reference
         self.quantum_weights = quantum_weights
         self.dtype = dtype
