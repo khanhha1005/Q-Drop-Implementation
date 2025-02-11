@@ -43,7 +43,7 @@ Q-Drop/
 
 1. Clone the repository:
   ```
-   git clone https://github.com/yourusername/Q-Drop.git
+   git clone https://github.com/khanhha1005/Q-Drop-Implementation.git
   ```
 2. Create conda environment:
   ```
