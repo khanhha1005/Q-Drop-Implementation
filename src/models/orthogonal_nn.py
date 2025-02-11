@@ -59,7 +59,8 @@ class HybridModel(tf.keras.Model):
                 prune_window=algorithm_params['prune_window'], 
                 prune_ratio=algorithm_params['prune_ratio'], 
                 seed=random,
-                dtype=tf.float64
+                dtype=tf.float64,
+                schedule=algorithm_params['schedule']
             )
         elif algorithm == 'dropout':
             #TODO: Implement dropout algorithm
