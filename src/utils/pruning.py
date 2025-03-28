@@ -57,6 +57,26 @@ class ScheduledGradientPruning:
         # Initialize the PruneScheduler and store it as a property
         self.scheduler = PruneScheduler(self) if schedule else None
 
+    def get_pruning_stats(self):
+        """Get current pruning statistics.
+        
+        Returns:
+            dict: Dictionary containing pruning statistics including:
+                - current_ratio: Current pruning ratio
+                - num_pruned: Number of weights that would be pruned
+                - total_weights: Total number of weights
+                - phase: Current phase ('accumulate' or 'prune')
+        """
+        num_params = tf.shape(self.quantum_weights)[0]
+        num_pruned = tf.maximum(1, tf.cast(self.prune_ratio * tf.cast(num_params, self.dtype), tf.int32))
+        
+        return {
+            'current_ratio': float(self.prune_ratio.numpy()),
+            'num_pruned': int(num_pruned.numpy()),
+            'total_weights': int(num_params.numpy()),
+            'phase': 'accumulate' if self.accumulate_flag.numpy() else 'prune'
+        }
+
     @tf.function
     def update_phase(self):
         """Update the phase flags and counters based on current counts."""
