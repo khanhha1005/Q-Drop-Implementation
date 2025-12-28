@@ -54,6 +54,17 @@ Q-Drop/
   conda activate Penny2
   ```
 ## Citation
-```
 
-```
+If you use this repository or find it helpful in your research, please cite:
+
+### BibTeX
+```bibtex
+@INPROCEEDINGS{11161668,
+  author={Nguyen, Pham Thai Quang and Khanh, Tran Cat and Ergu, Yared Abera and Nguyen, Van-Linh},
+  booktitle={ICC 2025 - IEEE International Conference on Communications},
+  title={Q-Drop: Optimizing Quantum Orthogonal Networks with Statistic Pruning and Dynamic Dropout},
+  year={2025},
+  pages={2394-2399},
+  keywords={Training;Accuracy;Pneumonia;Neural networks;Machine learning;Stability analysis;Robustness;Optimization;Standards;Image classification;Quantum machine learning;Orthogonal neural network;Image classification;Statistical pruning;Dynamic dropout},
+  doi={10.1109/ICC52391.2025.11161668}
+}
