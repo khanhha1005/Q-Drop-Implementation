@@ -10,8 +10,10 @@ tf.get_logger().setLevel('ERROR')
 
 import pennylane as qml
 from utils.rbs_gate import *
-from utils.pruning import ScheduledGradientPruning
 import random as rd
+
+from qdrop import QDropConfig, QDropRuntimeFactory
+from qdrop.specs.pennylane_tf import PennyLaneTensorFlowSpecFactory
 
 # =============================================================================
 # HybridModel Definition with OOP Train Step
@@ -47,24 +49,30 @@ class HybridModel(tf.keras.Model):
             pyramid_circuit(weights, wires=range(6))
             return [qml.expval(qml.PauliZ(wire)) for wire in range(6)]
         self.quantum_circuit = quantum_circuit
-        
+        self.qdrop_forward_mask = tf.Variable(tf.ones((6,), dtype=tf.float64), trainable=False)
+
         # Additional classical NN layer
         self.classical_nn_2 = tf.keras.layers.Dense(1, activation='sigmoid', dtype=tf.float64)
-        
-        # Instantiate the ScheduledGradientPruning for the quantum_weights
-        if algorithm == 'pruning':
-            self.algorithm = ScheduledGradientPruning(
-                self.quantum_weights, 
-                accumulate_window=algorithm_params['accumulate_window'], 
-                prune_window=algorithm_params['prune_window'], 
-                prune_ratio=algorithm_params['prune_ratio'], 
-                seed=random,
-                dtype=tf.float64,
-                schedule=algorithm_params['schedule']
+        self.qdrop_quantum_layer = PennyLaneTensorFlowSpecFactory.create_adapter(
+            layer_id="orthogonal_quantum_layer",
+            parameter=self.quantum_weights,
+            num_wires=6,
+            mask_builder=self._build_qdrop_mask,
+            set_forward_mask=self._set_qdrop_forward_mask,
+            supports_forward_mask=True,
+        )
+        self.qdrop_runtime = None
+        if algorithm in {'pruning', 'dropout', 'both'}:
+            self.qdrop_runtime = QDropRuntimeFactory.create_tensorflow(
+                quantum_layers=self.qdrop_layers(),
+                config=QDropConfig(
+                    algorithm=algorithm,
+                    accumulate_window=algorithm_params['accumulate_window'],
+                    prune_window=algorithm_params['prune_window'],
+                    prune_ratio=algorithm_params['prune_ratio'],
+                    schedule=algorithm_params['schedule'],
+                ),
             )
-        elif algorithm == 'dropout':
-            #TODO: Implement dropout algorithm
-            pass
 
     def call(self, inputs):
         inputs = tf.cast(inputs, tf.float64)
@@ -77,6 +85,7 @@ class HybridModel(tf.keras.Model):
             classical_output,
             fn_output_signature=tf.TensorSpec(shape=(6,), dtype=tf.float64)
         )
+        quantum_outputs = quantum_outputs * self.qdrop_forward_mask
         # Replace any NaN values with zeros
         quantum_outputs = tf.where(tf.math.is_nan(quantum_outputs), 
                                    tf.zeros_like(quantum_outputs), quantum_outputs)
@@ -84,9 +93,31 @@ class HybridModel(tf.keras.Model):
         nn_output = self.classical_nn_2(quantum_outputs)
         return nn_output
 
-    @tf.function
+    def _build_qdrop_mask(self, wire_ids):        
+        indices = [wire_id for wire_id in wire_ids if 0 <= wire_id < int(self.quantum_weights.shape[0])]
+        updates = tf.ones((len(indices),), dtype=tf.bool)
+        mask = tf.zeros_like(self.quantum_weights, dtype=tf.bool)
+        if not indices:
+            return mask
+        scatter_indices = tf.constant([[wire_id] for wire_id in indices], dtype=tf.int32)
+        return tf.tensor_scatter_nd_update(mask, scatter_indices, updates)
+
+    def _set_qdrop_forward_mask(self, dropout_state):
+        mask = np.ones((6,), dtype=np.float64)
+        if dropout_state is not None and dropout_state.enabled:
+            for wire_id in dropout_state.dropped_wires:
+                if 0 <= wire_id < 6:
+                    mask[wire_id] = 0.0
+        self.qdrop_forward_mask.assign(mask)
+
+    def qdrop_layers(self):
+        return [self.qdrop_quantum_layer]
+
     def train_step(self, data):
         x, y = data  # Unpack the data
+
+        if self.qdrop_runtime is not None and self.optimizer is not None:
+            self.qdrop_runtime.start_epoch(int(self.optimizer.iterations.numpy()) + 1)
 
         with tf.GradientTape() as tape:
             y_pred = self(x, training=True)
@@ -94,18 +125,13 @@ class HybridModel(tf.keras.Model):
         
         # Compute gradients for all trainable variables
         gradients = tape.gradient(loss, self.trainable_variables)
-        
-        # Locate quantum_weights gradient by matching names
-        quantum_grad = None
-        for idx, var in enumerate(self.trainable_variables):
-            if var.name == self.quantum_weights.name:
-                quantum_grad = gradients[idx]
-                break
-        if quantum_grad is None:
-            raise ValueError("Quantum weights not found in trainable_variables")
-        
-        # Use the ScheduledGradientPruning to update quantum weights and apply the rest of the gradients
-        self.algorithm.apply(quantum_grad, self.optimizer, gradients, self.trainable_variables)
+
+        if self.qdrop_runtime is not None:
+            gradients = self.qdrop_runtime.process_gradients(gradients, self.trainable_variables)
+
+        self.optimizer.apply_gradients(zip(gradients, self.trainable_variables))
+        if self.qdrop_runtime is not None:
+            self.qdrop_runtime.after_step()
         
         # Sanitize all weights: Replace any NaNs with zeros
         for var in self.trainable_variables:
@@ -115,5 +141,3 @@ class HybridModel(tf.keras.Model):
         # Update metrics and return a dictionary mapping metric names to current values
         self.compiled_metrics.update_state(y, y_pred)
         return {m.name: m.result() for m in self.metrics}
-
-
